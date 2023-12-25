@@ -42,7 +42,7 @@ global engine
 engine = create_engine(url="mysql+pymysql://{0}:{1}@{2}:{3}/{4}".format(
         user, password, host, port, database), echo=False)
 
-
+#function to extract the number of hours, minutes and seconds from a field which has data in the form of "PT1H20M20S"
 def parse_duration(duration):
     duration_str = ""
     hours = 0
@@ -74,7 +74,8 @@ def parse_duration(duration):
         duration_str += f"{seconds}s"
 
     return duration_str.strip()
-
+#function to extract the channel details of the channel id specified by the User in the Streamlit app 
+#Store the relevant data in ChannelData
 def ExtractChannelData(ch_id):
 
     global ChannelData 
@@ -122,7 +123,8 @@ def ExtractChannelData(ch_id):
         if e.resp.status == 400 and 'transient' in str(e):
             st.write("Youtube api transient error ")
 
-
+#Using the playlist id extracted in the Channel Details in function ExtractChannelData, get the video ids corresponding to that channel.
+#return the list of video ids
 def ExtractPlaylistData(p_id):
 
     try:
@@ -164,7 +166,8 @@ def ExtractPlaylistData(p_id):
     
     
 
-#based on video ids, get video details
+#based on video ids, get video details, and comments of each video.
+#return 1 if successful
 def ExtractVideoData(video_ids):
     separator = ','
     video_details = []
@@ -205,7 +208,8 @@ def ExtractVideoData(video_ids):
         if e.resp.status == 400 and 'transient' in str(e):
             st.write("Youtube api transient error ")
     
-
+#get comments of specific video id
+#return comment details, list of dictionary of comment data
 def ExtractCommentsData(video_id):
     CommentDetails =[]
 
@@ -293,14 +297,16 @@ def ExtractCommentsData(video_id):
         
     return CommentDetails
 ######################################################################################################################################################
+#call function insertChannelDetail to insert the data of a specific channel to MongoDB
+#print the success message on the streamlit app.
 def UploadDataMongo():    
     retX = insertChannelDetail()
     if retX:
-        st.write("Inserted Channel Details successfully into MongoDB!")
-        st.session_state['Upload_Data_Mongo'] = False
+        return 1
+        #st.session_state['Upload_Data_Mongo'] = False
 
         
-
+#create the required parameters for database and collection to store youtube data in mongodb: Using pymongo
 def createCollection():
     #Creating the connection,DB and collection for MongoDB
     myclient = pymongo.MongoClient("mongodb://localhost:27017/")
@@ -308,6 +314,8 @@ def createCollection():
     global mycol
     mycol= mydb["ChannelDetails"]
     return
+#actual insertion of channel data into MongoDB in the collection created
+#return the _id of the document inserted.
 def insertChannelDetail():
     #check if channel details already exist in MongoDB, if so print msg and skip entering details, else enter details.
     Names = mycol.find({},{'Channel_Details.Channel_Name':1,'_id':0})
@@ -320,6 +328,8 @@ def insertChannelDetail():
     return retVal
 
 ######################################################################################################################################################
+#insertion of data read from MongoDB into MySQL as 4 different tables - channel,playlist,videos,comment
+#return 0, if details for that channel name already exist, return 1 if inserted successfully
 def UploadDataSQL(ch_name):
     
     
@@ -341,7 +351,7 @@ def UploadDataSQL(ch_name):
 
     
     
-    ChannelInfo = mycol.find_one({'Channel_Details.Channel_Name':ch_name})
+    ChannelInfo = mycol.find_one({'Channel_Details.Channel_Name':ch_name}) #based on the channel name selected in the streamlit app, get the details from MongoDB
 
     if ChannelInfo is not None:
         # Create required tables in MySQL
@@ -413,7 +423,8 @@ def UploadDataSQL(ch_name):
 
 
 
-
+# function to call relevant functions in sequence for youtube data extraction
+#return 0 if unsuccessful at any step: channel,playlist,video / return 1 if successful
 def ExtractYouTubeData(ch_id):
 
     retChannelData = ExtractChannelData(ch_id)
@@ -422,8 +433,8 @@ def ExtractYouTubeData(ch_id):
         if retvideo_ids:
             success = ExtractVideoData(retvideo_ids)
             if success:
-                st.write("YouTube data extracted successfully for channel id:", ch_id)
-                st.session_state['Extract_Data'] = False             
+                return 1
+                #st.session_state['Extract_Data'] = False             
             else:
                 return 0
         else:
@@ -443,25 +454,36 @@ CHIDbyuser = ""
 with header:
     st.title("Welcome to YouTube Data Harvesting Project")
 
-
+# will call the main you tube data extract function which in turn will call all the required other functions for extraction.
+# print msg on screen after successful extraction
 def click_button_ExtData(ChannelID):
     
     #st.write("Code is analyzing your text.")
     retVal = ExtractYouTubeData(ChannelID)
     if retVal == 0:
         return 0
+    else:
+        st.write("YouTube data extracted successfully for channel id:", ChannelID)
     #st.text("Channel id entered is:" + CHIDbyuser )
 
+#will call the main mongo db transfer function
+#print msg on screen after successful completion.
 def click_button_UploadData():
     #st.write("Code is analyzing your text.")
-    UploadDataMongo() 
-
+    retVal = UploadDataMongo() 
+    if retVal:
+        st.write("Inserted Channel Details successfully into MongoDB!")
+        
+#will call the main sql data storing function
+#print msg on screen after successful completion.
 def click_button_MoveData(ch_name):      
     ret = UploadDataSQL(ch_name)
     if ret != 0:
         st.write("Data uploaded to MySQL successfully!")
         st.session_state['Upload_Data_MySQL'] = False
-          
+        
+#returns the list of channel names available in MongoDB
+#will be used to populate the dropdown for channel selection to transfer data to MySQL.
 def Channel_Names_Select():
     Names = mycol.find({},{'Channel_Details.Channel_Name':1,'_id':0})
     temp_list=[]
@@ -470,7 +492,9 @@ def Channel_Names_Select():
     return temp_list
 
 
-########################################################################################################################################3
+########################################################################################################################################
+#View screen where the multiple queries are visible to be selected and executed. 
+#This function will actually execute the different queries and return a dataframe.
 def Query_Result(option):
     if (option == 0):
         query = ("""SELECT v.video_name, c.channel_name
@@ -588,7 +612,7 @@ def Query_Result(option):
         df = pd.read_sql(query, engine)
         return df
  
-#def Query_Names_Select():
+
 global query_list
 query_list= [
                 "1. What are the names of all the videos and their corresponding channels?",
@@ -602,7 +626,7 @@ query_list= [
                 "9. What is the average duration of all videos in each channel, and what are their corresponding channel names?",
                 "10. Which videos have the highest number of comments, and what are their corresponding channel names?"
             ]
-#return query_list
+
 
 # set the session variables for the toggle buttons
 if 'Extract_Data' not in st.session_state:
@@ -612,7 +636,7 @@ if 'Upload_Data_Mongo' not in st.session_state:
 if 'Upload_Data_MySQL' not in st.session_state:
     st.session_state['Upload_Data_MySQL'] = False
 
-
+# create the sidebar with different options to extract and view. Then based on the selection here, display corresponding fields.
 with sidebar1:
     selection = sidebar1.radio("What's your choice of task?",[":house: Home",":open_file_folder:(Extract,Transform & Load)",":bar_chart:(Query & View)"])
     # ExtractButton = sidebar1.radio(,)
@@ -630,19 +654,19 @@ if selection == ":house: Home":
 
 if selection == ":open_file_folder:(Extract,Transform & Load)":
     CHIDbyuser = st.text_input("Enter a valid YouTube Channel ID","")
-    createCollection()
+    createCollection() # mongodb collection needs to be ready
 
     #if CHIDbyuser:
     extDataButton = st.toggle("Extract Data of this YouTube ID",value=st.session_state['Extract_Data'])
     if extDataButton:
-            retValue = click_button_ExtData(CHIDbyuser)
+            retValue = click_button_ExtData(CHIDbyuser) # extract youtube data.
             if retValue == 0:
                 st.write("Enter a valid YouTube Channel ID to proceed further.")
             else:
                  UploadDataButton = st.toggle("Upload Data to MongoDB",value=st.session_state['Upload_Data_Mongo'])
                  if UploadDataButton:
                      #st.write("transferring to mongo")
-                     click_button_UploadData() 
+                     click_button_UploadData() # upload data to mongodb
                 
     
     choice_channel = st.selectbox('Select the channel to upload to MySQL', options = Channel_Names_Select())
@@ -652,7 +676,7 @@ if selection == ":open_file_folder:(Extract,Transform & Load)":
 
     MoveToSQLButton = st.toggle("Transfer Data from MongoDB to MySQL",value=st.session_state['Upload_Data_MySQL'])
     if MoveToSQLButton:
-        click_button_MoveData(choice_channel)
+        click_button_MoveData(choice_channel) #upload data to mysql
 
 if selection == ":bar_chart:(Query & View)":
     choice_query = st.selectbox('Select the query to view the result', options = query_list)
@@ -661,19 +685,5 @@ if selection == ":bar_chart:(Query & View)":
     #st.write("Selected Index : ", ind)
     ViewResult = st.button("View Query Result")
     if ViewResult:
-        dataf = Query_Result(ind)
-        st.dataframe(dataf)
-        # if ind == 0:
-        #     if not dataf.empty:
-        #         st.bar_chart(dataf)
-        #     # fig = px.bar(dataf, x='Fruit', y='Amount')
-        # st.plotly_chart(fig)
-        #st.bar_chart(dataf,x="Channel", y="Number of Videos")
-            
-   
-
-
-
-
-
-
+        dataf = Query_Result(ind) # execute the specific query based on the selected index.
+        st.dataframe(dataf) #display the resultset
